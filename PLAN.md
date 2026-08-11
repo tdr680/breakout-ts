@@ -32,6 +32,15 @@ Acceptance: the project starts with `npm run dev`, builds with `npm run build`, 
 
 Acceptance: the initial paddle, ball, and complete brick grid render correctly.
 
+### 2.5. GitHub Pages deployment
+
+- Configure Vite to build assets for the `/breakout-ts/` repository path.
+- Add a GitHub Actions workflow that builds the project with `npm ci` and `npm run build` on pushes to `main` or manual dispatch.
+- Upload `dist/` as a GitHub Pages artifact and deploy it with the official Pages actions.
+- Use the `github-pages` environment and the minimum required deployment permissions.
+
+Acceptance: the production build succeeds locally, and the workflow publishes the site to `https://tdr680.github.io/breakout-ts/` after GitHub Pages is configured to use GitHub Actions.
+
 ### 3. Input and game loop
 
 - Track left and right arrow-key state using `keydown` and `keyup`.
