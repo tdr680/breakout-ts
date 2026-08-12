@@ -8,6 +8,12 @@ const PADDLE_HEIGHT = 14;
 const PADDLE_BOTTOM_OFFSET = 24;
 const PADDLE_SPEED = 360;
 const PADDLE_COLOR = '#60a5fa';
+const BALL_RADIUS = 10;
+const BALL_INITIAL_X = CANVAS_WIDTH / 2;
+const BALL_INITIAL_Y = 300;
+const BALL_INITIAL_VELOCITY_X = 260;
+const BALL_INITIAL_VELOCITY_Y = -120;
+const BALL_COLOR = '#f9fafb';
 const MAX_DELTA_SECONDS = 0.05;
 
 interface Paddle {
@@ -23,8 +29,18 @@ interface InputState {
   rightPressed: boolean;
 }
 
+interface Ball {
+  x: number;
+  y: number;
+  radius: number;
+  velocityX: number;
+  velocityY: number;
+}
+
 interface GameState {
   paddle: Paddle;
+  ball: Ball;
+  ballExitedBottom: boolean;
 }
 
 function requireElement<T extends Element>(selector: string): T {
@@ -72,6 +88,14 @@ function createInitialGameState(): GameState {
       height: PADDLE_HEIGHT,
       speed: PADDLE_SPEED,
     },
+    ball: {
+      x: BALL_INITIAL_X,
+      y: BALL_INITIAL_Y,
+      radius: BALL_RADIUS,
+      velocityX: BALL_INITIAL_VELOCITY_X,
+      velocityY: BALL_INITIAL_VELOCITY_Y,
+    },
+    ballExitedBottom: false,
   };
 }
 
@@ -95,8 +119,37 @@ function updatePaddle(paddle: Paddle, deltaSeconds: number): void {
   paddle.x = Math.max(0, Math.min(nextX, CANVAS_WIDTH - paddle.width));
 }
 
+function updateBall(ball: Ball, deltaSeconds: number): void {
+  ball.x += ball.velocityX * deltaSeconds;
+  ball.y += ball.velocityY * deltaSeconds;
+
+  if (ball.x - ball.radius < 0) {
+    ball.x = ball.radius;
+    ball.velocityX = Math.abs(ball.velocityX);
+  } else if (ball.x + ball.radius > CANVAS_WIDTH) {
+    ball.x = CANVAS_WIDTH - ball.radius;
+    ball.velocityX = -Math.abs(ball.velocityX);
+  }
+
+  if (ball.y - ball.radius < 0) {
+    ball.y = ball.radius;
+    ball.velocityY = Math.abs(ball.velocityY);
+  }
+}
+
 function update(deltaSeconds: number): void {
   updatePaddle(gameState.paddle, deltaSeconds);
+
+  if (gameState.ballExitedBottom) {
+    return;
+  }
+
+  updateBall(gameState.ball, deltaSeconds);
+
+  if (gameState.ball.y - gameState.ball.radius > CANVAS_HEIGHT) {
+    gameState.ballExitedBottom = true;
+    status.textContent = 'Ball exited through the bottom';
+  }
 }
 
 function renderPaddle(paddle: Paddle): void {
@@ -104,11 +157,19 @@ function renderPaddle(paddle: Paddle): void {
   context.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
 }
 
+function renderBall(ball: Ball): void {
+  context.beginPath();
+  context.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+  context.fillStyle = BALL_COLOR;
+  context.fill();
+}
+
 function render(): void {
   context.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   context.fillStyle = BACKGROUND_COLOR;
   context.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   renderPaddle(gameState.paddle);
+  renderBall(gameState.ball);
 }
 
 function restart(): void {
@@ -116,7 +177,7 @@ function restart(): void {
   inputState.leftPressed = false;
   inputState.rightPressed = false;
   previousFrameTime = null;
-  status.textContent = 'Paddle ready';
+  status.textContent = 'Ball in play';
 }
 
 function gameLoop(timestamp: number): void {
