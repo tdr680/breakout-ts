@@ -14,6 +14,19 @@ const BALL_INITIAL_Y = 300;
 const BALL_INITIAL_VELOCITY_X = 260;
 const BALL_INITIAL_VELOCITY_Y = -120;
 const BALL_COLOR = '#f9fafb';
+const PADDLE_MAX_HORIZONTAL_SPEED_FACTOR = 0.85;
+const BRICK_ROWS = 5;
+const BRICK_COLUMNS = 8;
+const BRICK_HEIGHT = 20;
+const BRICK_GAP = 8;
+const BRICK_SIDE_MARGIN = 36;
+const BRICK_TOP_OFFSET = 48;
+const BRICK_WIDTH = (
+  CANVAS_WIDTH
+  - BRICK_SIDE_MARGIN * 2
+  - BRICK_GAP * (BRICK_COLUMNS - 1)
+) / BRICK_COLUMNS;
+const BRICK_COLORS = ['#f87171', '#fb923c', '#facc15', '#4ade80', '#22d3ee'];
 const MAX_DELTA_SECONDS = 0.05;
 
 interface Paddle {
@@ -37,9 +50,19 @@ interface Ball {
   velocityY: number;
 }
 
+interface Brick {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+  active: boolean;
+}
+
 interface GameState {
   paddle: Paddle;
   ball: Ball;
+  bricks: Brick[];
   ballExitedBottom: boolean;
 }
 
@@ -79,6 +102,25 @@ const inputState: InputState = {
 let gameState = createInitialGameState();
 let previousFrameTime: number | null = null;
 
+function createBricks(): Brick[] {
+  const bricks: Brick[] = [];
+
+  for (let row = 0; row < BRICK_ROWS; row += 1) {
+    for (let column = 0; column < BRICK_COLUMNS; column += 1) {
+      bricks.push({
+        x: BRICK_SIDE_MARGIN + column * (BRICK_WIDTH + BRICK_GAP),
+        y: BRICK_TOP_OFFSET + row * (BRICK_HEIGHT + BRICK_GAP),
+        width: BRICK_WIDTH,
+        height: BRICK_HEIGHT,
+        color: BRICK_COLORS[row] ?? '#f9fafb',
+        active: true,
+      });
+    }
+  }
+
+  return bricks;
+}
+
 function createInitialGameState(): GameState {
   return {
     paddle: {
@@ -95,6 +137,7 @@ function createInitialGameState(): GameState {
       velocityX: BALL_INITIAL_VELOCITY_X,
       velocityY: BALL_INITIAL_VELOCITY_Y,
     },
+    bricks: createBricks(),
     ballExitedBottom: false,
   };
 }
@@ -137,6 +180,70 @@ function updateBall(ball: Ball, deltaSeconds: number): void {
   }
 }
 
+function ballOverlapsRectangle(
+  ball: Ball,
+  rectangle: Pick<Paddle, 'x' | 'y' | 'width' | 'height'>,
+): boolean {
+  const closestX = Math.max(rectangle.x, Math.min(ball.x, rectangle.x + rectangle.width));
+  const closestY = Math.max(rectangle.y, Math.min(ball.y, rectangle.y + rectangle.height));
+  const distanceX = ball.x - closestX;
+  const distanceY = ball.y - closestY;
+
+  return distanceX * distanceX + distanceY * distanceY <= ball.radius * ball.radius;
+}
+
+function resolvePaddleCollision(ball: Ball, paddle: Paddle): void {
+  if (ball.velocityY <= 0 || !ballOverlapsRectangle(ball, paddle)) {
+    return;
+  }
+
+  const paddleCenter = paddle.x + paddle.width / 2;
+  const hitOffset = Math.max(-1, Math.min(1, (ball.x - paddleCenter) / (paddle.width / 2)));
+  const speed = Math.hypot(ball.velocityX, ball.velocityY);
+
+  ball.x = Math.max(ball.radius, Math.min(ball.x, CANVAS_WIDTH - ball.radius));
+  ball.y = paddle.y - ball.radius;
+  ball.velocityX = speed * PADDLE_MAX_HORIZONTAL_SPEED_FACTOR * hitOffset;
+  ball.velocityY = -Math.sqrt(speed * speed - ball.velocityX * ball.velocityX);
+}
+
+function resolveBrickCollision(ball: Ball, brick: Brick): void {
+  const overlapFromLeft = ball.x + ball.radius - brick.x;
+  const overlapFromRight = brick.x + brick.width - (ball.x - ball.radius);
+  const overlapFromTop = ball.y + ball.radius - brick.y;
+  const overlapFromBottom = brick.y + brick.height - (ball.y - ball.radius);
+  const horizontalOverlap = Math.min(overlapFromLeft, overlapFromRight);
+  const verticalOverlap = Math.min(overlapFromTop, overlapFromBottom);
+
+  if (horizontalOverlap < verticalOverlap) {
+    if (ball.x < brick.x + brick.width / 2) {
+      ball.x = brick.x - ball.radius;
+      ball.velocityX = -Math.abs(ball.velocityX);
+    } else {
+      ball.x = brick.x + brick.width + ball.radius;
+      ball.velocityX = Math.abs(ball.velocityX);
+    }
+  } else if (ball.y < brick.y + brick.height / 2) {
+    ball.y = brick.y - ball.radius;
+    ball.velocityY = -Math.abs(ball.velocityY);
+  } else {
+    ball.y = brick.y + brick.height + ball.radius;
+    ball.velocityY = Math.abs(ball.velocityY);
+  }
+}
+
+function hitFirstBrick(ball: Ball, bricks: Brick[]): void {
+  for (const brick of bricks) {
+    if (!brick.active || !ballOverlapsRectangle(ball, brick)) {
+      continue;
+    }
+
+    brick.active = false;
+    resolveBrickCollision(ball, brick);
+    return;
+  }
+}
+
 function update(deltaSeconds: number): void {
   updatePaddle(gameState.paddle, deltaSeconds);
 
@@ -145,6 +252,8 @@ function update(deltaSeconds: number): void {
   }
 
   updateBall(gameState.ball, deltaSeconds);
+  resolvePaddleCollision(gameState.ball, gameState.paddle);
+  hitFirstBrick(gameState.ball, gameState.bricks);
 
   if (gameState.ball.y - gameState.ball.radius > CANVAS_HEIGHT) {
     gameState.ballExitedBottom = true;
@@ -164,10 +273,22 @@ function renderBall(ball: Ball): void {
   context.fill();
 }
 
+function renderBricks(bricks: Brick[]): void {
+  for (const brick of bricks) {
+    if (!brick.active) {
+      continue;
+    }
+
+    context.fillStyle = brick.color;
+    context.fillRect(brick.x, brick.y, brick.width, brick.height);
+  }
+}
+
 function render(): void {
   context.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   context.fillStyle = BACKGROUND_COLOR;
   context.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  renderBricks(gameState.bricks);
   renderPaddle(gameState.paddle);
   renderBall(gameState.ball);
 }
